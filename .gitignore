@@ -1,0 +1,11 @@
+.vscode/
+.DS_Store/
+build/
+*.exe
+*.xex
+*.dll
+*.pdb
+*.xdb
+*.obj
+*.out
+*.bin

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<xex>
+  <format>
+    <compressed/>
+  </format>
+  <mediatypes>
+    <allpackages/>
+  </mediatypes>
+  <sysdll/>
+  <baseaddr addr="0x91DF0000"/>
+</xex>
