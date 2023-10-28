@@ -45,8 +45,10 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 		} else {
 			DbgPrint("UsbdSecPatch | not patching WgcAddDevice: kernel is %i\n", XboxKrnlVersion->Build);
 		}
-	}
 end:
-	// in theory, this should unload the DLL, but it doesn't seem to. sorry.
-	return FALSE;
+		// set load count to 1
+		*(WORD*)((DWORD)hInstDLL + 64) = 1;
+		return FALSE;
+	}
+	return TRUE;
 }
