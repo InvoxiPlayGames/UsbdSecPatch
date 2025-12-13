@@ -98,11 +98,11 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 			XexGetModuleHandle("xboxkrnl.exe", &hKernel);
 			XexGetProcedureAddress(hKernel, 745, &pdwUsbdAuthFunction);
 		} else if(XboxKrnlVersion->Build == 9199) {
-			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_9199;
+			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_9199;
 		} else if(XboxKrnlVersion->Build == 7258) {
-			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_7258;
+			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_7258;
 		} else if(XboxKrnlVersion->Build == 6717) {
-			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_6717;
+			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_6717;
 		}
 
 		DbgPrint("UsbdSecPatch | got UsbdIsDeviceAuthenticated at %p\n", pdwUsbdAuthFunction);
