@@ -1,15 +1,48 @@
 # UsbdSecPatch.s - the UsbdSec patch in XeBuild format
 .set KERNEL_VIRT_BASE, 0x80000000
 
-# function patch addresses as of 17559 retail
-# and 17489 devkit
+# function patch addresses
+.ifdef retail_6717
+	.set UsbdIsDeviceAuthenticated, 0x800C5A08
+	.set WgcAddDevice_bne, 0x800E48A4
+	.set WgcAddDevice_BranchLocation, 0x4
+.endif
+
+.ifdef retail_7258
+	.set UsbdIsDeviceAuthenticated, 0x800C71E0
+	.set WgcAddDevice_bne, 0x800E618C
+	.set WgcAddDevice_BranchLocation, 0x4
+.endif
+
+.ifdef retail_9199
+	.set UsbdIsDeviceAuthenticated, 0x800CF338
+	.set WgcAddDevice_bne, 0x800ED7DC
+	.set WgcAddDevice_BranchLocation, 0x4
+.endif
+
+.ifdef retail_13604
+	.set UsbdIsDeviceAuthenticated, 0x800D8A78
+	.set WgcAddDevice_bne, 0x800F75D0
+	.set WgcAddDevice_BranchLocation, 0x10
+.endif
+
+.ifdef retail_15574
+	.set UsbdIsDeviceAuthenticated, 0x800D90D8
+	.set WgcAddDevice_bne, 0x800F9BD0
+	.set WgcAddDevice_BranchLocation, 0x10
+.endif
+
 .ifdef devkit_17489
-	.set UsbdIsDeviceAuthenticated, 0x801051b8
-	.set WgcAddDevice_bne, 0x801341f4
-	.set WgcBindToUserNop, 0x801331f0
-.else
-	.set UsbdIsDeviceAuthenticated, 0x800d8748
-	.set WgcAddDevice_bne, 0x800f98e0
+	.set UsbdIsDeviceAuthenticated, 0x801051B8
+	.set WgcAddDevice_bne, 0x801341F4
+	.set WgcAddDevice_BranchLocation, 0x10
+	.set WgcBindToUserNop, 0x801331F0
+.endif
+
+.ifdef retail_17559
+	.set UsbdIsDeviceAuthenticated, 0x800D8748
+	.set WgcAddDevice_bne, 0x800F98E0
+	.set WgcAddDevice_BranchLocation, 0x10
 .endif
 
 # patches UsbdIsDeviceAuthenticated to report all devices as authenticated
@@ -28,7 +61,7 @@ UsbdAuthPatchEnd:
 .long (WgcIntPatchEnd - WgcIntPatchStart) / 4 # patch length in number of DWORDs
 # patch itself - replaces a bne cr6, 0x10 with b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
 WgcIntPatchStart:
-b 0x10
+b WgcAddDevice_BranchLocation
 WgcIntPatchEnd:
 
 .ifdef devkit_17489
