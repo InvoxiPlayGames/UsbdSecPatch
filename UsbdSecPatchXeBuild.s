@@ -3,19 +3,19 @@
 
 # function patch addresses
 .ifdef retail_6717
-	.set UsbdIsDeviceAuthenticated, 0x800C5A08
+	.set UsbdIsDeviceAuthenticated, 0x800C5950
 	.set WgcAddDevice_bne, 0x800E48A4
 	.set WgcAddDevice_BranchLocation, 0x4
 .endif
 
 .ifdef retail_7258
-	.set UsbdIsDeviceAuthenticated, 0x800C71E0
+	.set UsbdIsDeviceAuthenticated, 0x800C7128
 	.set WgcAddDevice_bne, 0x800E618C
 	.set WgcAddDevice_BranchLocation, 0x4
 .endif
 
 .ifdef retail_9199
-	.set UsbdIsDeviceAuthenticated, 0x800CF338
+	.set UsbdIsDeviceAuthenticated, 0x800CF280
 	.set WgcAddDevice_bne, 0x800ED7DC
 	.set WgcAddDevice_BranchLocation, 0x4
 .endif
