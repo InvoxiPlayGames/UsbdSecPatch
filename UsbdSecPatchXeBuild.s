@@ -6,6 +6,7 @@
 .ifdef devkit_17489
 	.set UsbdIsDeviceAuthenticated, 0x801051b8
 	.set WgcAddDevice_bne, 0x801341f4
+	.set UsbDeviceAssertionNop, 0x801331f0
 .else
 	.set UsbdIsDeviceAuthenticated, 0x800d8748
 	.set WgcAddDevice_bne, 0x800f98e0
@@ -29,3 +30,13 @@ UsbdAuthPatchEnd:
 WgcIntPatchStart:
 b 0x10
 WgcIntPatchEnd:
+
+.ifdef devkit_17489
+.long UsbDeviceAssertionNop - KERNEL_VIRT_BASE # patch address
+.long (UsbDeviceAssertionNopEnd - UsbDeviceAssertionNopStart) / 4 # patch length in number of DWORDs
+# patch itself - NOPs out an assertion in the kernel to allow unauthorized Xinput devices
+# Specifically hit this with the Mayflash Magic-NS
+UsbDeviceAssertionNopStart:
+nop
+UsbDeviceAssertionNopEnd:
+.endif
