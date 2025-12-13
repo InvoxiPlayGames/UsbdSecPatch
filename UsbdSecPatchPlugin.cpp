@@ -7,8 +7,8 @@
 // patch address for 17489 devkit kernel - the bne after UsbdGetEndpointDescriptor in WgcAddDevice
 #define WGCADDDEVICE_INST_17489_DEV 0x801341F4
 
-// patch address for 17489 devkit kernel - assertion that's hit with some 3rd party xinput devices
-#define USB_DEVICE_ASSERTION_INST_17489_DEV 0x801331F0 
+// patch address for 17489 devkit kernel - assertion in WgcBindToUser that's hit with some 3rd party xinput devices
+#define WGCBINDTOUSER_INST_17489_DEV 0x801331F0 
 
 // struct for the kernel version
 typedef struct _XBOX_KRNL_VERSION {
@@ -89,14 +89,14 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 		// we could scan kernel address space but lol. lmao.
 		// 17489 kernel is used for XDKBuild and RGLoader, the
 		// latter optionally spoofs the kernel version to 17559
-		if (isDevkit && (XboxKrnlVersion->Build == 17559 || XboxKrnlVersion->Build == 17489)){
+		if (isDevkit && XboxKrnlVersion->Build >= 17489){
 			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
 			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST_17489_DEV, WGCADDDEVICE_INST_17489_DEV + 0x10);
 
-			// Replaces twui r0, 0x19 to avoid a kernel assertion when certain 3rd party
+			// Replaces twui r0, 0x19 to avoid a kernel assertion in WgcBindToUser when certain 3rd party
 			// XInput devices like the Mayflash NS are inserted
-			POKE_NOP(USB_DEVICE_ASSERTION_INST_17489_DEV);
+			POKE_NOP(WGCBINDTOUSER_INST_17489_DEV);
 		}
 		else if (XboxKrnlVersion->Build == 17559) {
 			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
