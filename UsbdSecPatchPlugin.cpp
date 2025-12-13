@@ -2,6 +2,12 @@
 #include "ppcasm.h"
 
 // patch address for the bne (or beq for 6717 - 9199) after UsbdGetEndpointDescriptor in WgcAddDevice
+//
+// Patches modify the check after UsbdGetEndpointDescriptor(device, 0, 3, 1)
+//
+// Patch for 6717, 7258, and 9199 replace a beq cr6, 0x64 with b 0x4 (NOP would work as well)
+// Patch for 13604, 15574, 17489, 17559 replace bne cr6, 0x10 with b 0x10
+//
 #define WGCADDDEVICE_INST_17559 0x800F98E0
 #define WGCADDDEVICE_INST_17489_DEV 0x801341F4
 #define WGCADDDEVICE_INST_15574 0x800F9BD0
@@ -9,6 +15,12 @@
 #define WGCADDDEVICE_INST_9199 0x800ED7DC
 #define WGCADDDEVICE_INST_7258 0x800E618C
 #define WGCADDDEVICE_INST_6717 0x800E48A4
+
+// Addresses of the UsbdIsDeviceAuthenticated function. 9199 and earlier do not
+// have UsbdIsDeviceAuthenticated as ordinal 745 and must be patched manually
+#define USBDISDEVICEAUTHENTICATED_9199 0x800CF280
+#define USBDISDEVICEAUTHENTICATED_7258 0x800C7128
+#define USBDISDEVICEAUTHENTICATED_6717 0x800C5950
 
 // patch address for 17489 devkit kernel - assertion in WgcBindToUser that's hit with some 3rd party xinput devices
 #define WGCBINDTOUSER_INST_17489_DEV 0x801331F0 
@@ -77,9 +89,22 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 	bool isDevkit = *(uint32_t*)(0x8010D334) == 0x00000000;
 
 	if (dwReason == DLL_PROCESS_ATTACH) {
-		// fetch the kernel handle and find UsbdIsDeviceAuthenticated's export
-		XexGetModuleHandle("xboxkrnl.exe", &hKernel);
-		XexGetProcedureAddress(hKernel, 745, &pdwUsbdAuthFunction);
+
+		// UsbdIsDeviceAuthenticated is ordinal 745 on 13604 and later
+		// 9199 and earlier do not have an export for UsbdIsDeviceAuthenticated
+		if(XboxKrnlVersion->Build >= 13604)
+		{
+			// fetch the kernel handle and find UsbdIsDeviceAuthenticated's export
+			XexGetModuleHandle("xboxkrnl.exe", &hKernel);
+			XexGetProcedureAddress(hKernel, 745, &pdwUsbdAuthFunction);
+		} else if(XboxKrnlVersion->Build == 9199) {
+			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_9199;
+		} else if(XboxKrnlVersion->Build == 7258) {
+			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_7258;
+		} else if(XboxKrnlVersion->Build == 6717) {
+			pdwUsbdAuthFunction = USBDISDEVICEAUTHENTICATED_6717;
+		}
+
 		DbgPrint("UsbdSecPatch | got UsbdIsDeviceAuthenticated at %p\n", pdwUsbdAuthFunction);
 		// if we couldn't find the function, jump ship
 		if (pdwUsbdAuthFunction == NULL)
@@ -87,42 +112,28 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 		// patch the function to return true
 		pdwUsbdAuthFunction[0] = LI(3, 1);
 		pdwUsbdAuthFunction[1] = BLR;
-		
+
 		// Only patch WgcAddDevice for certain kernel versions due to hardcoded function address
 		// we could scan kernel address space but lol. lmao.
 		// 17489 kernel is used for XDKBuild and RGLoader, the
 		// latter optionally spoofs the kernel version to 17559
 		if (isDevkit && XboxKrnlVersion->Build >= 17489){
-			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST_17489_DEV, WGCADDDEVICE_INST_17489_DEV + 0x10);
 
 			// Replaces twui r0, 0x19 to avoid a kernel assertion in WgcBindToUser when certain 3rd party
 			// XInput devices like the Mayflash NS are inserted
 			POKE_NOP(WGCBINDTOUSER_INST_17489_DEV);
 		} else if (XboxKrnlVersion->Build == 6717) {
-			// Replace beq cr6, 0x64 to b 0x4 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL. Could also just be a NOP.
 			POKE_B(WGCADDDEVICE_INST_6717, WGCADDDEVICE_INST_6717 + 0x4);
 		} else if (XboxKrnlVersion->Build == 7258) {
-			// Replace beq cr6, 0x64 to b 0x4 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL. Could also just be a NOP.
 			POKE_B(WGCADDDEVICE_INST_7258, WGCADDDEVICE_INST_7258 + 0x4);
 		} else if (XboxKrnlVersion->Build == 9199) {
-			// Replace beq cr6, 0x64 to b 0x4 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL. Could also just be a NOP.
 			POKE_B(WGCADDDEVICE_INST_9199, WGCADDDEVICE_INST_9199 + 0x4);
 		} else if (XboxKrnlVersion->Build == 13604) {
-			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST_13604, WGCADDDEVICE_INST_13604 + 0x10);
 		} else if (XboxKrnlVersion->Build == 15574) {
-			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST_15574, WGCADDDEVICE_INST_15574 + 0x10);
 		} else if (XboxKrnlVersion->Build == 17559) {
-			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
-			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST_17559, WGCADDDEVICE_INST_17559 + 0x10);
 		} else {
 			DbgPrint("UsbdSecPatch | not patching WgcAddDevice: kernel is %i\n", XboxKrnlVersion->Build);
