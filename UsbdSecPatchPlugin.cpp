@@ -4,6 +4,12 @@
 // patch address for 17559 - the bne after UsbdGetEndpointDescriptor in WgcAddDevice
 #define WGCADDDEVICE_INST 0x800F98E0
 
+// patch address for 17489 devkit kernel - the bne after UsbdGetEndpointDescriptor in WgcAddDevice
+#define WGCADDDEVICE_INST_17489_DEV 0x801341F4
+
+// patch address for 17489 devkit kernel - assertion in WgcBindToUser that's hit with some 3rd party xinput devices
+#define WGCBINDTOUSER_INST_17489_DEV 0x801331F0 
+
 // struct for the kernel version
 typedef struct _XBOX_KRNL_VERSION {
 	WORD Major;
@@ -65,6 +71,8 @@ EXTERN_C {
 BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 	HANDLE hKernel = NULL;
 	PDWORD pdwUsbdAuthFunction = NULL;
+	bool isDevkit = *(uint32_t*)(0x8010D334) == 0x00000000;
+
 	if (dwReason == DLL_PROCESS_ATTACH) {
 		// fetch the kernel handle and find UsbdIsDeviceAuthenticated's export
 		XexGetModuleHandle("xboxkrnl.exe", &hKernel);
@@ -77,10 +85,21 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 		pdwUsbdAuthFunction[0] = LI(3, 1);
 		pdwUsbdAuthFunction[1] = BLR;
 		
-		// only patch WgcAddDevice if 17559, due to hardcoded function address
+		// Only patch WgcAddDevice for certain kernel versions due to hardcoded function address
 		// we could scan kernel address space but lol. lmao.
-		if (XboxKrnlVersion->Build == 17559) {
-			// replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
+		// 17489 kernel is used for XDKBuild and RGLoader, the
+		// latter optionally spoofs the kernel version to 17559
+		if (isDevkit && XboxKrnlVersion->Build >= 17489){
+			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
+			// nullifies the check to see if that returned NULL
+			POKE_B(WGCADDDEVICE_INST_17489_DEV, WGCADDDEVICE_INST_17489_DEV + 0x10);
+
+			// Replaces twui r0, 0x19 to avoid a kernel assertion in WgcBindToUser when certain 3rd party
+			// XInput devices like the Mayflash NS are inserted
+			POKE_NOP(WGCBINDTOUSER_INST_17489_DEV);
+		}
+		else if (XboxKrnlVersion->Build == 17559) {
+			// Replace bne cr6, 0x10 to b 0x10 after UsbdGetEndpointDescriptor(device, 0, 3, 1)
 			// nullifies the check to see if that returned NULL
 			POKE_B(WGCADDDEVICE_INST, WGCADDDEVICE_INST + 0x10);
 		} else {

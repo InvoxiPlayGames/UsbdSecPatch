@@ -32,3 +32,4 @@
 // Poke branches
 #define POKE_B(addr, dest)  POKE_32(addr, B(dest, addr))
 #define POKE_BL(addr, dest) POKE_32(addr, BL(dest, addr))
+#define POKE_NOP(addr) POKE_32(addr, NOP)
