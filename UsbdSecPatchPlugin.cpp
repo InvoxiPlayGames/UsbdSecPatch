@@ -15,12 +15,14 @@
 #define WGCADDDEVICE_INST_9199 0x800ED7DC
 #define WGCADDDEVICE_INST_7258 0x800E618C
 #define WGCADDDEVICE_INST_6717 0x800E48A4
+#define WGCADDDEVICE_INST_1888 0x800B862C
 
 // Addresses of the UsbdIsDeviceAuthenticated function. 9199 and earlier do not
 // have UsbdIsDeviceAuthenticated as ordinal 745 and must be patched manually
 #define USBDISDEVICEAUTHENTICATED_9199 0x800CF280
 #define USBDISDEVICEAUTHENTICATED_7258 0x800C7128
 #define USBDISDEVICEAUTHENTICATED_6717 0x800C5950
+#define USBDISDEVICEAUTHENTICATED_1888 0x800A0A08
 
 // patch address for 17489 devkit kernel - assertion in WgcBindToUser that's hit with some 3rd party xinput devices
 #define WGCBINDTOUSER_INST_17489_DEV 0x801331F0 
@@ -103,6 +105,8 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_7258;
 		} else if(XboxKrnlVersion->Build == 6717) {
 			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_6717;
+		} else if(XboxKrnlVersion->Build == 1888) {
+			pdwUsbdAuthFunction = (PDWORD)USBDISDEVICEAUTHENTICATED_1888;
 		}
 
 		DbgPrint("UsbdSecPatch | got UsbdIsDeviceAuthenticated at %p\n", pdwUsbdAuthFunction);
@@ -123,6 +127,8 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 			// Replaces twui r0, 0x19 to avoid a kernel assertion in WgcBindToUser when certain 3rd party
 			// XInput devices like the Mayflash NS are inserted
 			POKE_NOP(WGCBINDTOUSER_INST_17489_DEV);
+		} else if (XboxKrnlVersion->Build == 1888) {
+			POKE_B(WGCADDDEVICE_INST_6717, WGCADDDEVICE_INST_1888 + 0x4);
 		} else if (XboxKrnlVersion->Build == 6717) {
 			POKE_B(WGCADDDEVICE_INST_6717, WGCADDDEVICE_INST_6717 + 0x4);
 		} else if (XboxKrnlVersion->Build == 7258) {
