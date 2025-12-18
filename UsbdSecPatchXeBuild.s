@@ -2,6 +2,12 @@
 .set KERNEL_VIRT_BASE, 0x80000000
 
 # function patch addresses
+.ifdef retail_1888
+	.set UsbdIsDeviceAuthenticated, 0x800A0A08
+	.set WgcAddDevice_bne, 0x800B862C
+	.set WgcAddDevice_BranchLocation, 0x4
+.endif
+
 .ifdef retail_6717
 	.set UsbdIsDeviceAuthenticated, 0x800C5950
 	.set WgcAddDevice_bne, 0x800E48A4
