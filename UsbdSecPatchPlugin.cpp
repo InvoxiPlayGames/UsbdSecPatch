@@ -128,7 +128,7 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 			// XInput devices like the Mayflash NS are inserted
 			POKE_NOP(WGCBINDTOUSER_INST_17489_DEV);
 		} else if (XboxKrnlVersion->Build == 1888) {
-			POKE_B(WGCADDDEVICE_INST_6717, WGCADDDEVICE_INST_1888 + 0x4);
+			POKE_B(WGCADDDEVICE_INST_1888, WGCADDDEVICE_INST_1888 + 0x4);
 		} else if (XboxKrnlVersion->Build == 6717) {
 			POKE_B(WGCADDDEVICE_INST_6717, WGCADDDEVICE_INST_6717 + 0x4);
 		} else if (XboxKrnlVersion->Build == 7258) {
