@@ -1,5 +1,10 @@
 #include <xtl.h>
 #include "ppcasm.h"
+#include "Detours.h"
+
+// Detours statics (build_plugin.bat compiles this single TU)
+BYTE   Detour::TrampolineBuffer[200 * 20] = {};
+SIZE_T Detour::TrampolineSize = 0;
 
 // patch address for the bne (or beq for 6717 - 9199) after UsbdGetEndpointDescriptor in WgcAddDevice
 //
@@ -25,7 +30,7 @@
 #define USBDISDEVICEAUTHENTICATED_1888 0x800A0A08
 
 // patch address for 17489 devkit kernel - assertion in WgcBindToUser that's hit with some 3rd party xinput devices
-#define WGCBINDTOUSER_INST_17489_DEV 0x801331F0 
+#define WGCBINDTOUSER_INST_17489_DEV 0x801331F0
 
 // struct for the kernel version
 typedef struct _XBOX_KRNL_VERSION {
@@ -35,47 +40,6 @@ typedef struct _XBOX_KRNL_VERSION {
 	WORD Qfe;
 } XBOX_KRNL_VERSION, *PXBOX_KRNL_VERSION;
 
-typedef struct _UNICODE_STRING {
-	USHORT Length;
-	USHORT MaximumLength;
-	PWSTR  Buffer;
-} UNICODE_STRING, *PUNICODE_STRING;
-
-typedef struct _STRING {
-    USHORT Length;
-    USHORT MaximumLength;
-    PCHAR Buffer;
-} STRING, *PSTRING;
-
-typedef struct _LDR_DATA_TABLE_ENTRY { 
-	LIST_ENTRY InLoadOrderLinks;  // 0x0 sz:0x8
-	LIST_ENTRY InClosureOrderLinks;  // 0x8 sz:0x8
-	LIST_ENTRY InInitializationOrderLinks; // 0x10 sz:0x8
-	PVOID NtHeadersBase; // 0x18 sz:0x4
-	PVOID ImageBase; // 0x1C sz:0x4
-	DWORD SizeOfNtImage; // 0x20 sz:0x4
-	UNICODE_STRING FullDllName; // 0x24 sz:0x8
-	UNICODE_STRING BaseDllName; // 0x2C sz:0x8
-	DWORD Flags; // 0x34 sz:0x4
-	DWORD SizeOfFullImage; // 0x38 sz:0x4
-	PVOID EntryPoint; // 0x3C sz:0x4
-	WORD LoadCount; // 0x40 sz:0x2
-	WORD ModuleIndex; // 0x42 sz:0x2
-	PVOID DllBaseOriginal; // 0x44 sz:0x4
-	DWORD CheckSum; // 0x48 sz:0x4
-	DWORD ModuleLoadFlags; // 0x4C sz:0x4
-	DWORD TimeDateStamp; // 0x50 sz:0x4
-	PVOID LoadedImports; // 0x54 sz:0x4
-	PVOID XexHeaderBase; // 0x58 sz:0x4
-	union{
-		STRING LoadFileName; // 0x5C sz:0x8
-		struct {
-			PVOID ClosureRoot; // 0x5C sz:0x4 LDR_DATA_TABLE_ENTRY
-			PVOID TraversalParent; // 0x60 sz:0x4 LDR_DATA_TABLE_ENTRY
-		} asEntry;
-	} inf;
-} LDR_DATA_TABLE_ENTRY, *PLDR_DATA_TABLE_ENTRY; // size 100
-
 // kernel imports that aren't normally exposed
 EXTERN_C { 
 	VOID DbgPrint(const char* s, ...);
@@ -83,7 +47,99 @@ EXTERN_C {
 	DWORD XexGetProcedureAddress(HANDLE hand, DWORD dwOrdinal, PVOID Address);
 	extern PXBOX_KRNL_VERSION XboxKrnlVersion;
 }
- 
+
+// XamUserBindDeviceCallback function addresses
+#define XAMUSERBINDDEVICECALLBACK_17559 0x816D9060 // 7C 8B 23 78 7C A4 2B 78 54 CA 06 3F
+#define XAMUSERBINDDEVICECALLBACK_17489_DEV 0x817A34B8
+
+typedef int (*xam_bind_func_t)(unsigned int controllerId, unsigned int context, unsigned __int8 category, bool disconnect, unsigned __int8* userIndex);
+
+static Detour XamBindDetour;
+
+struct BoundDevice {
+	uint32_t origId;
+	uint32_t bumpedId;
+	uint32_t context;
+};
+
+static BoundDevice g_bound[8];
+static int g_boundCount = 0;
+
+static bool checkBumpedIdExists(uint32_t bumped) {
+	for (int j = 0; j < g_boundCount; j++) {
+		if (g_bound[j].bumpedId == bumped) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int CallOriginalBind(unsigned int id, unsigned int context, unsigned __int8 category, bool disconnect, unsigned __int8* userIndex) {
+	return XamBindDetour.GetOriginal<xam_bind_func_t>()(id, context, category, disconnect, userIndex);
+}
+
+static int XamUserBindDeviceCallbackHook(unsigned int controllerId, unsigned int context, unsigned __int8 category, bool disconnect, unsigned __int8* userIndex) {
+	DbgPrint("UsbdSecPatch | bind cb: id=%08x ctx=%08x cat=%d disc=%d\n",
+		controllerId, context, category, disconnect ? 1 : 0);
+
+	if (disconnect) {
+		// translate the id back for devices we bumped, then drop the entry
+		for (int i = 0; i < g_boundCount; i++) {
+			// the disconnecting controller is one of ours
+			if (g_bound[i].context == context) { 
+				uint32_t id = g_bound[i].bumpedId;
+				g_bound[i] = g_bound[--g_boundCount];
+
+				DbgPrint("UsbdSecPatch | disconnect ctx=%08x -> id %08x\n", context, id);
+				
+				return CallOriginalBind(id, context, category, disconnect, userIndex);
+			}
+		}
+
+		// the disconnecting controller did not need to be hooked
+		return CallOriginalBind(controllerId, context, category, disconnect, userIndex);
+	} else {
+		// check if a known device re-binding: keep its (possibly bumped) id
+		for (int i = 0; i < g_boundCount; i++) {
+			if (g_bound[i].context == context) {
+				DbgPrint("UsbdSecPatch | rebind ctx=%08x -> id %08x\n", context, g_bound[i].bumpedId);
+
+				return CallOriginalBind(g_bound[i].bumpedId, context, category, disconnect, userIndex);
+			}
+		}
+
+		// new device: bump the id if it collides with a live different-context one
+		uint32_t id = controllerId;
+		for (int i = 0; i < g_boundCount; i++) {
+			if (g_bound[i].bumpedId == id || g_bound[i].origId == id) {
+				uint32_t bumped = controllerId | 0x80000000;
+				
+				while (true) {
+					if (checkBumpedIdExists(bumped)) {
+						bumped++;
+					} else {
+						break;
+					}
+				}
+
+				DbgPrint("UsbdSecPatch | duplicate id %08x (ctx %08x) -> bumped %08x\n",
+					controllerId, context, bumped);
+				id = bumped;
+				break;
+			}
+		}
+
+		if (g_boundCount < 8) {
+			g_bound[g_boundCount].origId = controllerId;
+			g_bound[g_boundCount].bumpedId = id;
+			g_bound[g_boundCount].context = context;
+			g_boundCount++;
+		}
+		return CallOriginalBind(id, context, category, disconnect, userIndex);
+	}
+}
+
 // dll entrypoint
 BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 	HANDLE hKernel = NULL;
@@ -144,10 +200,26 @@ BOOL APIENTRY DllMain(HANDLE hInstDLL, DWORD dwReason, LPVOID lpReserved) {
 		} else {
 			DbgPrint("UsbdSecPatch | not patching WgcAddDevice: kernel is %i\n", XboxKrnlVersion->Build);
 		}
-end:
-		// set load count to 1
-		((LDR_DATA_TABLE_ENTRY *)hInstDLL)->LoadCount = 1;
-		return FALSE;
+
+		// Hook XamUserBindDeviceCallback 
+		uint32_t bindAddr = 0;
+		if (isDevkit && XboxKrnlVersion->Build >= 17489) {
+			bindAddr = XAMUSERBINDDEVICECALLBACK_17489_DEV;
+		} else if (!isDevkit && XboxKrnlVersion->Build == 17559) {
+			bindAddr = XAMUSERBINDDEVICECALLBACK_17559;
+		}
+
+		if (bindAddr == 0) {
+			DbgPrint("UsbdSecPatch | no XamUserBindDeviceCallback address for this kernel, hook not installed\n");
+		} else {
+			XamBindDetour = Detour((void*)bindAddr, (void*)XamUserBindDeviceCallbackHook);
+			XamBindDetour.Install();
+			DbgPrint("UsbdSecPatch | XamUserBindDeviceCallback hook installed at %08x\n", bindAddr);
+		}
+	
+		DbgPrint("UsbdSecPatch | resident, build %s %s\n", __DATE__, __TIME__);
 	}
+	end:
+	// Because we need to hook a callback we have to stay resident, return TRUE
 	return TRUE;
 }
